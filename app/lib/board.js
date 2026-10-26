@@ -57,7 +57,7 @@ function broadcast(event) {
   for (const write of board.viewers) write(frame);
 }
 
-/** New points go out in small batches rather than one message per mouse move. */
+/** New points go out in small batches (every 20ms) rather than one message per mouse move. */
 function scheduleFlush() {
   if (board.flushTimer) return;
   board.flushTimer = setTimeout(() => {
@@ -65,7 +65,7 @@ function scheduleFlush() {
     const chunks = board.pending;
     board.pending = [];
     if (chunks.length) broadcast({ type: "draw", chunks, online: online() });
-  }, 40);
+  }, 20);
 }
 
 function allow(who, cost, now) {

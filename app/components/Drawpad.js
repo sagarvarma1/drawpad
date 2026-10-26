@@ -139,20 +139,22 @@ export function Drawpad({
   }
 
   /**
-   * Sends what's been drawn since the last send (every 50ms while drawing). Pieces of a stroke go
-   * one at a time, so they reach the server, and everyone else, in order.
+   * Sends what's been drawn so far. One request per stroke is in flight at a time, so pieces
+   * arrive in order; points drawn meanwhile go out together as soon as it returns. (Queueing a
+   * request per tick instead lets a slow connection fall seconds behind.)
    */
   function send(stroke) {
-    if (!stroke.unsent.length || stroke.dead) return;
-    const pts = stroke.unsent;
-    stroke.unsent = [];
-    stroke.queue = (stroke.queue ?? Promise.resolve()).then(() =>
-      post(stroke, pts),
-    );
+    if (stroke.sending || stroke.dead || !stroke.unsent.length) return;
+    // The server takes at most 200 points per request.
+    const pts = stroke.unsent.splice(0, 400);
+    stroke.sending = true;
+    post(stroke, pts).finally(() => {
+      stroke.sending = false;
+      send(stroke);
+    });
   }
 
   async function post(stroke, pts) {
-    if (stroke.dead) return;
     try {
       const res = await fetch("/api/stroke", {
         method: "POST",
@@ -194,7 +196,7 @@ export function Drawpad({
     mine.current.add(stroke.id);
     strokes.current.set(stroke.id, stroke);
     render(stroke);
-    stroke.timer = setInterval(() => send(stroke), 50);
+    send(stroke);
   }
 
   function move(e) {
@@ -206,16 +208,14 @@ export function Drawpad({
       return;
     stroke.pts.push(x, y);
     stroke.unsent.push(x, y);
-    // Long strokes are sent in pieces the server accepts (at most 200 points each).
-    if (stroke.unsent.length >= 400) send(stroke);
     render(stroke, n);
+    send(stroke);
   }
 
   function up() {
     const stroke = current.current;
     if (!stroke) return;
-    clearInterval(stroke.timer);
-    if (!stroke.dead) send(stroke);
+    send(stroke);
     current.current = null;
   }
 
